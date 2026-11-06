@@ -1,0 +1,7 @@
+# by @donimas · AI Levels series
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.claude/settings.local.json
+.DS_Store
