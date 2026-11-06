@@ -2,7 +2,7 @@
 
 You commented **ROUTER** under *AI LEVELS · EP 01*. This is the guide and starter kit behind it: how to stop running everything on the top model, and how to make Claude Code pick the model and effort for each task. It takes about 10 minutes to read, and every config here was run for real (see [Tested on](#tested-on)).
 
-> **Check your version first:** `claude --version`. The model aliases move with Claude Code releases. On **v2.1.280** (tested here), `sonnet` means **Sonnet 5** and `haiku` means **Haiku 4.5**, which costs 10× more than Haiku 5.5 and has no effort setting. `haiku` points to Haiku 5.5 from **v2.1.293**, and `sonnet` points to Sonnet 5.5 from **v2.1.284**. Run `claude update`. [source](https://code.claude.com/docs/en/model-config#version-history)
+> **Check your version first:** `claude --version`. The model aliases move with Claude Code releases. `haiku` means Haiku 5.5 from **v2.1.293**, and `sonnet` means Sonnet 5.5 from **v2.1.284**. On older versions you get **Haiku 4.5**, which costs 10× more and has no effort setting, and **Sonnet 5**. Run `claude update`. Everything here was tested on **v2.1.311**; the first round ran on v2.1.280. [source](https://code.claude.com/docs/en/model-config#version-history)
 
 ---
 
@@ -172,7 +172,9 @@ The fields (`name`, `description`, `tools`, `model`, `effort`, `color`) come fro
 | `test-runner` | `claude-haiku-4-5-20251001` | none |
 | `reviewer` | `claude-opus-5-5` | `high` |
 
-> **Haiku on v2.1.280:** the `haiku` alias gives you Haiku 4.5, and Claude Code silently drops `effort: low`. To get Haiku 5.5 today, set `model: claude-haiku-5-5`. That worked on 2.1.280, but Claude Code printed `[claude-code:unrecognized_model]` and couldn't price the run: it estimated $0.079 where list price is about $0.002. The clean fix is `claude update` to v2.1.293 or later, after which `haiku` means Haiku 5.5.
+**On 2.1.311 (T15):** `code-searcher` and `test-runner` ran on `claude-haiku-5-5` at `low`, `implementer` on `claude-sonnet-5-5` at `medium`, and `reviewer` on `claude-opus-5-5` at `high`.
+
+> **Haiku before v2.1.293:** the `haiku` alias gives you Haiku 4.5, and Claude Code silently drops `effort: low`. To get Haiku 5.5 today, set `model: claude-haiku-5-5`. That worked on 2.1.280, but Claude Code printed `[claude-code:unrecognized_model]` and couldn't price the run: it estimated $0.079 where list price is about $0.002. The clean fix is `claude update` to v2.1.293 or later, after which `haiku` means Haiku 5.5.
 
 Check live which model a subagent is on with `/tasks` (v2.1.242+). [source](https://code.claude.com/docs/en/sub-agents#choose-a-model)
 
@@ -309,7 +311,9 @@ python examples/router.py "Where is parse_date defined?"
 # [lookup -> claude-haiku-5-5 @ low]
 ```
 
-> **Not run against the live API.** No API key was available. [`examples/test_router.py`](examples/test_router.py) drives the real SDK client (`anthropic` 2.6.0) through a fake HTTP transport and checks the exact request bodies: the model, `output_config.effort`, `thinking: {"type": "disabled"}` on the classifier, and the fallback. 3 of 3 pass. Run them with `pip install anthropic pytest && cd examples && pytest -q`.
+> **Run against the live API (R1, 2026-11-06, `anthropic` 2.6.0).** "What does `grep -rn TODO src/` find?" → `lookup → claude-haiku-5-5 @ low`. "Rename a Python function used in 3 files safely" → `edit → claude-sonnet-5-5 @ medium`. "Risk of dropping a column on a payments table" → `risky → claude-opus-5-5 @ high`. All three answers were correct.
+>
+> Offline, [`examples/test_router.py`](examples/test_router.py) drives the real SDK client (`anthropic` 2.6.0) through a fake HTTP transport and checks the exact request bodies: the model, `output_config.effort`, `thinking: {"type": "disabled"}` on the classifier, and the fallback. 3 of 3 pass. Run them with `pip install anthropic pytest && cd examples && pytest -q`.
 
 When to use something else instead (each was checked to exist on 2026-11-06):
 
@@ -322,7 +326,7 @@ When to use something else instead (each was checked to exist on 2026-11-06):
 
 ## Tested on
 
-Claude Code **2.1.280**, macOS, Claude subscription, 2026-11-06. Runs were headless (`claude -p … --output-format json --setting-sources project,local`) in a scratch project; models and effort were read from `modelUsage` and the session JSONL. 17 runs, about $2.55 of API-equivalent usage.
+Claude Code **2.1.280**, then **2.1.311** (T15, T16, R1), macOS, Claude subscription, 2026-11-06. Runs were headless (`claude -p … --output-format json --setting-sources project,local`) in a scratch project; models and effort were read from `modelUsage` and the session JSONL. 17 runs, about $2.55 of API-equivalent usage.
 
 | # | Config | Observed model(s) | Observed effort | Result |
 | - | - | - | - | - |
@@ -341,14 +345,15 @@ Claude Code **2.1.280**, macOS, Claude subscription, 2026-11-06. Runs were headl
 | T13 | **all templates**: settings.json + CLAUDE.md + 4 agents + advisor | Sonnet 5 → Haiku 4.5 → Sonnet 5 → Haiku 4.5 → Opus 5.5; advisor Opus 5.5 | `medium` / – / `medium` / – / `high` | pass, tests green |
 | T14 | **template** settings.with-hook.json, Explore | denied, then retried, `claude-haiku-4-5-20251001` | none | pass |
 | C1–C3 | resume, same model vs `--model haiku` | Sonnet 5 → Haiku 4.5 | – | same model: 34,835 cached tokens read; after switch: 0 read, 37,659 rewritten |
+| T15 | **2.1.311, all templates** + hook: searcher → implementer → test-runner → reviewer | main `claude-sonnet-5-5`; `claude-haiku-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`, `claude-opus-5-5` | `medium`; `low` / `medium` / `low` / `high` | pass, $0.19 |
+| T16 | **2.1.311**, resume with effort `medium` → `high`, same model | `claude-sonnet-5-5` | `high` | cache kept: 24,871 read, 541 written |
+| R1 | `examples/router.py` against the live API | Haiku 5.5 classifier → Haiku 5.5 / Sonnet 5.5 / Opus 5.5 | `low` / `medium` / `high` | pass, 3 of 3 routed as intended |
 
 **Not verified** (docs only, or not tested):
 - `opusplan` and interactive `/model` and `/effort`: no interactive session was run. The switch cost was confirmed through resume + `--model` (C1–C3).
-- Keeping the cache across an effort change on 5.5/5.1 models: on 2.1.280 the aliases point to Sonnet 5 and Haiku 4.5, so it wasn't tested.
 - The size of the weekly limit, and how much each model weighs against plan limits: not published.
 - The Haiku 5.5 price above 100K-token prompts, OTel export, and the `/usage` screen: docs only.
-- The per-call `effort` parameter on the Agent tool needs v2.1.292, so it isn't available on 2.1.280.
-- `router.py` against the live API.
+- The per-call `effort` parameter on the Agent tool (v2.1.292+): available on 2.1.311, not tested. The templates set effort in frontmatter instead.
 - LiteLLM, OpenRouter and Not Diamond: only checked that the docs exist and what they say.
 - One test prompt full of random filler words got a false-positive safety refusal (`[bio]`) on Sonnet 5. If a long automated run suddenly stops, check for that.
 

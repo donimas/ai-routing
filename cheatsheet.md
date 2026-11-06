@@ -34,4 +34,4 @@ Model resolution for subagents: per-call `model` → frontmatter `model` (`inher
 
 ---
 
-*by @donimas · AI Levels series* · tested on Claude Code 2.1.280, 2026-11-06
+*by @donimas · AI Levels series* · tested on Claude Code 2.1.280 and 2.1.311, 2026-11-06
