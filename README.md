@@ -32,6 +32,66 @@ cp templates/settings.json your-repo/.claude/settings.json   # or settings.with-
 cat templates/CLAUDE.md >> your-repo/CLAUDE.md
 ```
 
+### The three scripts: what they do and how to run them
+
+| Script | What it does | Who runs it |
+| - | - | - |
+| [`templates/.claude/hooks/require-subagent-model.py`](templates/.claude/hooks/require-subagent-model.py) | Stops Claude Code from starting a subagent that has no model, so nothing silently inherits your expensive main model | **Claude Code**, automatically, before every subagent launch |
+| [`examples/router.py`](examples/router.py) | A small router for your own API calls: Haiku labels the task, a table picks model + effort | **You**, from a terminal |
+| [`examples/test_router.py`](examples/test_router.py) | Checks `router.py` offline, with no API key and no cost | **You**, from a terminal |
+
+**1. The hook (optional, Claude Code only).** Needs Python 3.10+. `cp -r templates/.claude` above already copied the script; switching it on is one more file:
+
+```bash
+cp templates/settings.with-hook.json your-repo/.claude/settings.json   # settings.json + the hook entry
+```
+
+Then start Claude Code in `your-repo` as usual. You never run the hook yourself: Claude Code passes it each subagent launch as JSON. It allows the launch when the call names a `model` or when the agent's file in `.claude/agents/` has a `model:` line. Anything else is denied, and Claude reads the reason and retries with a model. Try it by hand:
+
+```bash
+cd your-repo
+echo '{"tool_name":"Agent","tool_input":{"subagent_type":"code-searcher"}}' | python3 .claude/hooks/require-subagent-model.py
+# (no output, exit 0) -> allowed: code-searcher.md has model: haiku
+
+echo '{"tool_name":"Agent","tool_input":{"subagent_type":"Explore"}}' | python3 .claude/hooks/require-subagent-model.py
+# {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+#   "permissionDecisionReason": "Subagent 'Explore' has no explicit model. Retry the Agent call with model set to
+#   haiku (search, tests), sonnet (edits) or opus (risky review), or delegate to one of the routed agents in .claude/agents/."}}
+
+echo '{"tool_name":"Agent","tool_input":{"subagent_type":"Explore","model":"haiku"}}' | python3 .claude/hooks/require-subagent-model.py
+# (no output, exit 0) -> allowed: the call passes a model
+```
+
+In a real session you'll see a denied `Agent` call followed by a retry with `model: "haiku"`, which is tested in T11 and T14. Set `ROUTING_HOOK_LOG=/tmp/hook.jsonl` to log every launch the hook sees. Remove the `hooks` block from `.claude/settings.json` to turn it off.
+
+**2. The router (outside Claude Code).** It uses your Anthropic API account, so it's billed per token and not to a Claude subscription. It runs two requests: one tiny Haiku classification, then the real answer.
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install anthropic
+export ANTHROPIC_API_KEY=sk-ant-...        # from console.anthropic.com
+python examples/router.py "In one sentence: what does grep -rn TODO src/ find?"
+```
+
+Result: the first line is the route it picked, then the model's answer (run R1, 2026-11-06):
+
+```
+[lookup -> claude-haiku-5-5 @ low]
+It recursively searches all files under the src/ directory for lines containing "TODO" ...
+```
+
+Other real routes: "rename a Python function used in 3 files safely" → `[edit -> claude-sonnet-5-5 @ medium]`; "risk of dropping a column on a payments table" → `[risky -> claude-opus-5-5 @ high]`. If Haiku's label isn't one of `lookup | edit | debug | risky`, the router prints `[unsure -> claude-sonnet-5-5 @ medium]`: when in doubt it falls back to the middle tier, never the cheapest. To change the routes, edit the `ROUTES` table at the top of the file.
+
+**3. The router's test (offline).**
+
+```bash
+pip install anthropic pytest
+cd examples && pytest -q
+# ...  3 passed in 1.03s
+```
+
+It runs the real SDK client against a fake HTTP server, so it needs no key and costs nothing. It checks that risky tasks go to Opus at `high`, that a label like " Lookup\n" still routes to Haiku at `low`, that an unclear answer falls back to Sonnet at `medium`, and that the exact request bodies are right.
+
 ---
 
 ## 1. What is a router
